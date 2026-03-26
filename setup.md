@@ -1,28 +1,33 @@
-# Superpowers + Agency Agents + Gstack Skills 安装说明
+# Superpowers + Agency Agents + Design Skills + Gstack 安装说明
 
-## 三者定位
+## 四层定位
 
 | 层级 | 工具 | 作用 | 调用方式 |
 |------|------|------|---------|
-| 思考流程 | **Superpowers** | brainstorm → plan → execute → verify | 自动触发 |
+| 思考流程 | **Superpowers** | brainstorm -> plan -> execute -> verify | 自动触发（必装） |
 | 领域专家 | **Agency Agents** | 非工程领域的专家视角（营销/产品/销售等） | brainstorming 时由 hook 自动派遣 |
+| 设计智能 | **Design Skills** | 7 个设计 skill（UI/UX/品牌/Banner/Slides 等） | 主会话 skill 触发 + subagent 通过 search.py/Read |
 | 工程执行 | **Gstack 精简版** | 安全审计、架构评审 | `/security-audit`、`/architecture-review` slash command |
 
 协作流程示例：
 ```
 brainstorming（superpowers）
-  → 自动派遣领域专家（agency-agents hook）
-  → 输出方案
+  -> hook 自动派遣领域专家（agency-agents subagent_type）
+  -> UI/UX 项目自动运行 search.py --design-system
+  -> 输出方案
 
 writing-plans（superpowers）
-  → /architecture-review（gstack skill 审架构）
+  -> 每个任务分配角色 + 对应设计 skill
+  -> /architecture-review（gstack skill 审架构）
 
-执行开发（superpowers TDD）
-  → /requesting-code-review（superpowers 派 subagent 审代码）
-  → /security-audit（gstack skill 审安全）
+执行开发（superpowers subagent-driven-development）
+  -> subagent 按 subagent_type 加载完整 agent 定义
+  -> 设计任务先查 skill 再写代码
+  -> /requesting-code-review（superpowers 派 subagent 审代码）
+  -> /security-audit（gstack skill 审安全）
 
 遇到 bug
-  → /systematic-debugging（superpowers 系统调试）
+  -> /systematic-debugging（superpowers 系统调试）
 ```
 
 ---
@@ -30,213 +35,162 @@ writing-plans（superpowers）
 ## 前提
 
 - Claude Code 已安装并登录
-- Superpowers 插件已安装：`claude plugin install superpowers@claude-plugins-official`
+- Git 已安装
 
 ---
 
-## 第一步：下载源码仓库
+## 自动安装（推荐）
 
 ```bash
-# 统一放在 git 源码目录下
-mkdir -p ~/develop/code/git
+git clone https://github.com/agent-skill-hub/superpowers-agency-gstack.git ~/develop/code/git/superpowers-agency-gstack
+cd ~/develop/code/git/superpowers-agency-gstack
 
-# Agency Agents
-git clone --depth 1 https://github.com/msitarzewski/agency-agents.git ~/develop/code/git/agency-agents
+# 只装基础（Superpowers + hook）
+./setup.sh
 
-# Gstack（仅作为提取源，不安装）
-git clone --depth 1 https://github.com/garrytan/gstack.git ~/develop/code/git/gstack
+# 加装组件（可混搭）
+./setup.sh --agents             # + 领域专家
+./setup.sh --design             # + 设计智能（7 个 skill）
+./setup.sh --gstack             # + 安全护栏
+./setup.sh --agents --design    # 混搭
+./setup.sh --all                # 全装
+
+# 查看安装状态
+./setup.sh --status
 ```
+
+安装器会自动：
+1. 安装 Superpowers 插件
+2. Clone 所需的源码仓库到 `~/develop/code/git/`
+3. 创建 symlink（agents、design skills）或复制文件（gstack skills）
+4. 生成自适应 hook（根据已安装组件动态输出指令）
+5. 注册 hook 到 `~/.claude/settings.json`
 
 ---
 
-## 第二步：安装 Agency Agents（symlink 方式）
+## 手动安装
+
+如果你更喜欢手动控制，以下是各组件的安装步骤。
+
+### 第一步：安装 Superpowers（必装）
+
+```bash
+claude plugin install superpowers@claude-plugins-official
+```
+
+### 第二步：安装 Agency Agents（可选）
 
 用 symlink 指向 git repo，`git pull` 即可更新。
 
 ```bash
+git clone --depth 1 https://github.com/msitarzewski/agency-agents.git ~/develop/code/git/agency-agents
 mkdir -p ~/.claude/agents
 
-# 非工程角色目录（symlink）
-for dir in academic design examples marketing paid-media product project-management sales specialized support; do
+# 非工程角色目录
+for dir in academic examples marketing paid-media product project-management sales specialized support game-development; do
   ln -sfn ~/develop/code/git/agency-agents/$dir ~/.claude/agents/$dir
 done
 
-# 唯一保留的工程角色：Incident Response Commander
-ln -sfn ~/develop/code/git/agency-agents/engineering/engineering-incident-response-commander.md ~/.claude/agents/engineering-incident-response-commander.md
+# 设计类只保留 Inclusive Visuals Specialist（抗 AI 图像偏见，其它由 Design Skills 覆盖）
+ln -sf ~/develop/code/git/agency-agents/design/design-inclusive-visuals-specialist.md ~/.claude/agents/design-inclusive-visuals-specialist.md
+
+# 工程类只保留 Incident Response Commander
+ln -sf ~/develop/code/git/agency-agents/engineering/engineering-incident-response-commander.md ~/.claude/agents/engineering-incident-response-commander.md
 ```
 
-### 排除的内容
+#### 排除的内容
 
 - `engineering/` 整个目录（Claude 内置了充分的软件工程训练，工程执行纪律由 gstack skills 提供）
-- 仅保留 `engineering-incident-response-commander.md`（生产事故协调，含 SEV 分级、runbook 模板、on-call 轮转）
+  - 仅保留 `engineering-incident-response-commander.md`（生产事故协调，含 SEV 分级、runbook 模板、on-call 轮转）
+- `design/` 整个目录（由 Design Skills 7 个 skill 覆盖）
+  - 仅保留 `design-inclusive-visuals-specialist.md`（抗 AI 图像生成偏见，skill 不覆盖此能力）
 
-### 更新
+### 第三步：安装 Design Skills（可选）
+
+7 个设计 skill，通过 symlink 指向源码仓库：
 
 ```bash
-cd ~/develop/code/git/agency-agents && git pull
-# symlink 自动生效，如有新目录需手动添加 symlink
+git clone --depth 1 https://github.com/nextlevelbuilder/ui-ux-pro-max-skill.git ~/develop/code/git/ui-ux-pro-max-skill
+mkdir -p ~/.claude/skills
+
+for skill in ui-ux-pro-max design brand banner-design ui-styling slides design-system; do
+  ln -sfn ~/develop/code/git/ui-ux-pro-max-skill/.claude/skills/$skill ~/.claude/skills/$skill
+done
 ```
 
----
+| Skill | 做什么 | 何时使用 |
+|-------|-------|---------|
+| `ui-ux-pro-max` | 设计搜索引擎：67 风格、161 调色板、57 字体、99 UX 规则 | 任何 UI/UX 工作，总是从这里开始 |
+| `design` | Logo（55 风格、Gemini）、CIP 品牌样机、图标、社交图片 | 品牌视觉资产创作 |
+| `brand` | 品牌声音、视觉识别、消息框架、一致性审计 | 品牌内容、语调 |
+| `banner-design` | 22 种风格的 Banner（社交/广告/网页/印刷） | 营销视觉、广告创意 |
+| `ui-styling` | shadcn/ui + Tailwind CSS + 暗黑模式 + 无障碍组件 | 代码级 UI 实现 |
+| `design-system` | 三层 Token（primitive->semantic->component）、CSS 变量 | 设计 Token 架构 |
+| `slides` | HTML 演示文稿 + Chart.js 数据可视化 | 幻灯片、数据展示 |
 
-## 第三步：安装 Gstack 精简版 Skills
+**依赖链：** `brand` + `design-system` -> `ui-styling` -> `design` -> `banner-design` / `slides`
 
-从 gstack 提取方法论核心，去除 telemetry/contributor/analytics 等噪音，安装为全局 skill。
+### 第四步：安装 Gstack 精简版 Skills（可选）
 
-### 提取的 2 个 skill
+从 gstack 提取方法论核心，安装为全局 skill。
 
-另外 2 个（调试、代码审查）与 superpowers 内置 skill 功能重叠，已移除：
-- ~~`/investigate`~~ → 由 superpowers `/systematic-debugging` 替代（更完整：含多组件诊断、3-strike 架构质疑规则、辅助材料）
-- ~~`/code-review`~~ → 由 superpowers `/requesting-code-review` 替代（subagent 隔离上下文，不污染主对话）
+```bash
+git clone --depth 1 https://github.com/garrytan/gstack.git ~/develop/code/git/gstack
+mkdir -p ~/.claude/skills/security-audit ~/.claude/skills/architecture-review
+
+cp ~/develop/code/git/gstack/cso/SKILL.md ~/.claude/skills/security-audit/SKILL.md
+cp ~/develop/code/git/gstack/plan-eng-review/SKILL.md ~/.claude/skills/architecture-review/SKILL.md
+```
+
+另外 2 个（调试、代码审查）与 superpowers 内置 skill 重叠，已移除：
+- ~~`/investigate`~~ -> 由 superpowers `/systematic-debugging` 替代
+- ~~`/code-review`~~ -> 由 superpowers `/requesting-code-review` 替代
 
 | Skill | 用途 | 来源 |
 |-------|------|------|
-| `/security-audit` | 安全审计（OWASP+STRIDE、17 条误报排除、8/10 置信度门槛、独立验证） | gstack `/cso` |
-| `/architecture-review` | 架构评审（Scope Challenge、15 认知模式、ASCII 覆盖图、E2E 决策矩阵） | gstack `/plan-eng-review` |
+| `/security-audit` | 安全审计（OWASP+STRIDE、17 条误报排除、8/10 置信度门槛） | gstack `/cso` |
+| `/architecture-review` | 架构评审（15 认知模式、ASCII 覆盖图、E2E 决策矩阵） | gstack `/plan-eng-review` |
 
-### 安装位置
+### 第五步：安装 Hook 和注册
 
-```
-~/.claude/skills/
-  security-audit/SKILL.md
-  architecture-review/SKILL.md
-```
-
-### 更新方式
-
-gstack skills 经过精简修改，不能直接 `git pull`。更新流程：
+如果你用了自动安装，这步已经做好了。手动安装的话，运行：
 
 ```bash
-# 1. 拉取上游更新
-cd ~/develop/code/git/gstack && git pull
-
-# 2. 对比变更
-diff ~/develop/code/git/gstack/cso/SKILL.md ~/.claude/skills/security-audit/SKILL.md
-diff ~/develop/code/git/gstack/plan-eng-review/SKILL.md ~/.claude/skills/architecture-review/SKILL.md
-
-# 3. 如有有价值的变更，手动合并到精简版
+# setup.sh 会生成自适应 hook 并注册到 settings.json
+cd ~/develop/code/git/superpowers-agency-gstack
+./setup.sh  # 只会安装 hook，不会重复安装已有组件
 ```
+
+或参考 `setup.sh` 中 `install_hook()` 和 `install_settings()` 函数的内容手动创建。
 
 ---
 
-## 第四步：创建 Hook 联动三者
-
-这个 hook 在 SessionStart 时注入指令，让 superpowers 的 brainstorming/writing-plans/subagent 流程自动调用 agency agents 的专家角色。
-
-### 4-1. 创建 hook 脚本
+## 更新
 
 ```bash
-mkdir -p ~/.claude/hooks
-cat > ~/.claude/hooks/agency-superpowers.sh << 'HOOKEOF'
-#!/usr/bin/env bash
-cat << 'INSTRUCTIONS'
-<AGENCY_SUPERPOWERS>
+# Agency Agents（symlink 自动生效）
+cd ~/develop/code/git/agency-agents && git pull
 
-## Domain Expert Role Consultation
+# Design Skills（symlink 自动生效）
+cd ~/develop/code/git/ui-ux-pro-max-skill && git pull
 
-These instructions SUPPLEMENT the superpowers skills. They apply on top of brainstorming, writing-plans, and subagent-driven-development. Follow them in addition to the skill's own process.
-
-### When using `brainstorming`
-
-After exploring project context and BEFORE asking clarifying questions, identify which domain expert roles are relevant to this project. Then dispatch a domain expert consultation subagent for each relevant role, asking them to contribute their perspective to the design. Incorporate their input into the clarifying questions and approach proposals.
-
-**Role selection guide:**
-
-| Project type | Relevant roles |
-|---|---|
-| Ad / marketing landing page | Ad Creative Strategist, Conversion Copywriter, UX Architect, Paid Social Strategist |
-| Consumer product / app | Product Designer, UX Architect, Growth Hacker |
-| B2B SaaS | Product Manager, Sales Engineer, UX Architect |
-| Game / entertainment | Game Designer, Creative Director, Narrative Designer |
-| Internal tool / dashboard | UX Architect, Data Analyst |
-| API / developer tool | Developer Advocate, Technical Writer |
-| E-commerce | Conversion Rate Optimizer, Brand Strategist, UX Architect |
-| Payment system / fintech | Compliance Auditor, Security Engineer, Backend Architect |
-| Microservices / infrastructure | SRE, Backend Architect, DevOps Automator |
-
-**How to consult a domain expert:**
-Dispatch a subagent with subagent_type=general-purpose, framed as the expert:
-
-> "You are a [Role]. The user wants to build: [brief description].
-> Provide your top 3-5 observations, risks, and recommendations from your domain perspective. Be specific and opinionated. 2-3 sentences each."
-
-Collect responses, then synthesize into your clarifying questions and approach proposals. Attribute insights: "从合规角度..." / "安全工程师建议..."
-
-### When using `writing-plans`
-
-After writing the plan and BEFORE dispatching the plan-document-reviewer:
-1. Assign a domain expert role to each task via `**Role:**` field
-2. For architecture-heavy plans, recommend running `/architecture-review`
-
-**Role assignment examples:**
-
-| Task type | Assign role |
-|---|---|
-| Copywriting, headlines, CTAs | Conversion Copywriter |
-| Visual layout, component design | UI Designer |
-| User flow, interaction design | UX Architect |
-| Analytics, UTM, tracking | Growth Analyst |
-| SEO, meta tags | SEO Strategist |
-| Security-sensitive changes | → recommend `/security-audit` after implementation |
-| Architecture changes (8+ files) | → recommend `/architecture-review` before implementation |
-| API integration, backend | Backend Engineer |
-| General implementation | Senior Software Engineer |
-
-### When using `subagent-driven-development`
-
-When dispatching implementer subagents, use the `**Role:**` field from the plan to frame the subagent:
-
-In the implementer prompt, prepend:
-
-> "You are a [Role]. Bring your domain expertise to this task. [Role-specific lens: e.g., 'Think about compliance impact', 'Consider failure modes', 'Optimize for observability'.]"
-
-If the plan has no role assigned, infer the appropriate role from the task description before dispatching.
-
-### When completing implementation
-
-Before claiming work is done, recommend relevant skills based on change scope:
-- Security-sensitive code → `/security-audit`
-- PR ready for merge → `/requesting-code-review`（superpowers subagent）
-- Bug fix → `/systematic-debugging` methodology was hopefully already used
-- Architecture change → `/architecture-review` should have been done at plan stage
-
-</AGENCY_SUPERPOWERS>
-INSTRUCTIONS
-HOOKEOF
-chmod +x ~/.claude/hooks/agency-superpowers.sh
-```
-
-### 4-2. 注册到 settings.json
-
-在 `hooks.SessionStart` 中添加（不覆盖已有条目）：
-
-```json
-{
-  "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash $HOME/.claude/hooks/agency-superpowers.sh",
-            "timeout": 5
-          }
-        ]
-      }
-    ]
-  }
-}
+# Gstack（需手动对比合并）
+cd ~/develop/code/git/gstack && git pull
+diff ~/develop/code/git/gstack/cso/SKILL.md ~/.claude/skills/security-audit/SKILL.md
+diff ~/develop/code/git/gstack/plan-eng-review/SKILL.md ~/.claude/skills/architecture-review/SKILL.md
+# 如有有价值的变更，手动合并
 ```
 
 ---
 
 ## 验证
 
-重新启动一个 Claude Code 会话：
+重新启动一个 Claude Code 会话（新窗口，非 `/clear`）：
 
-1. **Agency + Superpowers 联动**：发起 brainstorming 请求，Claude 应在提问前自动派遣领域专家 subagent
-2. **Gstack Skills**：输入 `/security-audit`、`/architecture-review`，应能识别为 slash command
-3. **技能列表**：在系统提示中应看到 security-audit、architecture-review 两个 gstack skill
+1. **Superpowers**：发起任意开发请求，应自动进入 brainstorm -> plan -> execute 流程
+2. **Agency + Superpowers 联动**：brainstorming 时 Claude 应自动派遣领域专家 subagent，并使用 `subagent_type` 加载 agent 定义
+3. **Design Skills**：涉及 UI/UX 的请求应自动调用 `search.py`，设计任务应引用对应 skill
+4. **Gstack Skills**：输入 `/security-audit`、`/architecture-review`，应能识别为 slash command
 
 ---
 
@@ -245,20 +199,29 @@ chmod +x ~/.claude/hooks/agency-superpowers.sh
 ```
 ~/.claude/
   settings.json                          # hooks 注册
-  CLAUDE.md                              # 全局规则
   hooks/
-    agency-superpowers.sh                # SessionStart hook（联动三者）
+    agency-superpowers.sh                # SessionStart hook（自适应，联动四层）
   agents/                                # Agency Agents 角色（symlink）
-    academic/ → ~/develop/code/git/agency-agents/academic/
-    design/ → ~/develop/code/git/agency-agents/design/
-    marketing/ → ...
+    academic/ -> .../agency-agents/academic/
+    marketing/ -> .../agency-agents/marketing/
+    game-development/ -> .../agency-agents/game-development/
     ...
-    engineering-incident-response-commander.md → ...
+    design-inclusive-visuals-specialist.md -> ...
+    engineering-incident-response-commander.md -> ...
   skills/                                # 全局 Skills
-    security-audit/SKILL.md              # 从 gstack 提取
-    architecture-review/SKILL.md         # 从 gstack 提取
+    ui-ux-pro-max/ -> .../ui-ux-pro-max-skill/.claude/skills/ui-ux-pro-max/
+    design/ -> .../ui-ux-pro-max-skill/.claude/skills/design/
+    brand/ -> .../ui-ux-pro-max-skill/.claude/skills/brand/
+    banner-design/ -> .../ui-ux-pro-max-skill/.claude/skills/banner-design/
+    ui-styling/ -> .../ui-ux-pro-max-skill/.claude/skills/ui-styling/
+    design-system/ -> .../ui-ux-pro-max-skill/.claude/skills/design-system/
+    slides/ -> .../ui-ux-pro-max-skill/.claude/skills/slides/
+    security-audit/SKILL.md              # 从 gstack 复制
+    architecture-review/SKILL.md         # 从 gstack 复制
 
 ~/develop/code/git/
   agency-agents/                         # 源码仓库（git pull 更新）
+  ui-ux-pro-max-skill/                   # 源码仓库（git pull 更新）
   gstack/                                # 源码仓库（diff 对比用）
+  superpowers-agency-gstack/             # 安装器仓库
 ```
