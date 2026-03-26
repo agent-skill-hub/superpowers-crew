@@ -1,4 +1,4 @@
-# Superpowers Agency Gstack
+# Superpowers Crew
 
 > 一个人写代码，四支团队在背后。
 
@@ -69,8 +69,8 @@
 Superpowers 是必装的基础层，其它组件按需加装：
 
 ```bash
-git clone https://github.com/agent-skill-hub/superpowers-agency-gstack.git ~/develop/code/git/superpowers-agency-gstack
-cd ~/develop/code/git/superpowers-agency-gstack
+git clone https://github.com/agent-skill-hub/superpowers-crew.git ~/develop/code/git/superpowers-crew
+cd ~/develop/code/git/superpowers-crew
 
 # 只装基础（Superpowers + hook）
 ./setup.sh

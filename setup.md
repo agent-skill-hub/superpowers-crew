@@ -42,8 +42,8 @@ writing-plans（superpowers）
 ## 自动安装（推荐）
 
 ```bash
-git clone https://github.com/agent-skill-hub/superpowers-agency-gstack.git ~/develop/code/git/superpowers-agency-gstack
-cd ~/develop/code/git/superpowers-agency-gstack
+git clone https://github.com/agent-skill-hub/superpowers-crew.git ~/develop/code/git/superpowers-crew
+cd ~/develop/code/git/superpowers-crew
 
 # 只装基础（Superpowers + hook）
 ./setup.sh
@@ -157,7 +157,7 @@ cp ~/develop/code/git/gstack/plan-eng-review/SKILL.md ~/.claude/skills/architect
 
 ```bash
 # setup.sh 会生成自适应 hook 并注册到 settings.json
-cd ~/develop/code/git/superpowers-agency-gstack
+cd ~/develop/code/git/superpowers-crew
 ./setup.sh  # 只会安装 hook，不会重复安装已有组件
 ```
 
@@ -223,5 +223,5 @@ diff ~/develop/code/git/gstack/plan-eng-review/SKILL.md ~/.claude/skills/archite
   agency-agents/                         # 源码仓库（git pull 更新）
   ui-ux-pro-max-skill/                   # 源码仓库（git pull 更新）
   gstack/                                # 源码仓库（diff 对比用）
-  superpowers-agency-gstack/             # 安装器仓库
+  superpowers-crew/             # 安装器仓库
 ```
