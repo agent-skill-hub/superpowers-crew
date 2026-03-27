@@ -16,8 +16,9 @@
 | 领域专家层 | [Agency Agents](https://github.com/msitarzewski/agency-agents) | 50+ 非工程角色——营销、产品、销售、游戏、法务……想得到的都有 |
 | 设计智能层 | [ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) | 7 个设计 skill——67 种风格、161 调色板、57 字体、99 UX 规则、搜索引擎 |
 | 工程执行层 | [Gstack](https://github.com/garrytan/gstack) 精简版 | security-audit + architecture-review，交付前最后一道关 |
+| 集成层 | Patcher（本项目） | 把领域专家和设计 skill 直接注入 Superpowers 的 skill 源文件，零 token 消耗 |
 
-一句话总结：**Superpowers 管流程，Agency Agents 管视角，Design Skills 管美学，Gstack 管底线。**
+一句话总结：**Superpowers 管流程，Agency Agents 管视角，Design Skills 管美学，Gstack 管底线，Patcher 把它们焊在一起。**
 
 ---
 
@@ -27,10 +28,12 @@
 
 装上这套系统之后：
 
-- **Brainstorming 阶段** —— hook 自动派遣领域专家，产品经理问"用户真的需要这个吗"，安全专家问"这个接口裸奔没问题吗"；涉及 UI/UX 时自动调用 `search.py` 生成数据驱动的设计建议
+- **Brainstorming 阶段** —— skill 内置领域专家派发步骤，产品经理问"用户真的需要这个吗"，安全专家问"这个接口裸奔没问题吗"；涉及 UI/UX 时自动调用 `search.py` 生成数据驱动的设计建议
 - **Writing Plans 阶段** —— 每个任务自动分配最合适的专家角色和对应的设计 skill，不再是一个人的 TODO list
 - **Execute 阶段** —— subagent 按角色执行并加载完整 agent 定义，设计任务先查 skill 再写代码，营销文案用营销专家视角写
 - **Verify 阶段** —— 完成前自动推荐 security-audit、architecture-review、UX 验证，上线前帮你再看一眼
+
+**集成方式：** Patcher 直接修改 Superpowers 的 skill 源文件，指令在 skill 的 checklist 里面而不是外挂 supplement。每次对话零 token 消耗，插件更新后自动重新打补丁。
 
 **不装：** 你是一个全栈开发。
 **装了：** 你是一个全栈开发 + 产品经理 + UI 设计师 + 安全顾问 + 架构师 + 市场总监 + ……
@@ -136,6 +139,26 @@ cd ~/develop/code/git/superpowers-crew
 |-------|-------|
 | `/security-audit` | OWASP+STRIDE 安全审计，17 条误报排除，8/10 置信度门槛 |
 | `/architecture-review` | 架构评审，15 认知模式，ASCII 覆盖图，E2E 决策矩阵 |
+
+---
+
+## 自定义补丁
+
+补丁文件在 `patches/` 目录下，每个文件对应一个 Superpowers skill。添加新补丁只需创建文件，不用改脚本。
+
+**补丁文件格式：**
+
+```markdown
+<!-- ANCHOR: skill 中的锚点文本 -->
+<!-- PATCH:skill-name vN -->
+
+要注入的内容...
+```
+
+- 文件名 = skill 名（`xxx.patch.md` -> 打到 `skills/xxx/SKILL.md`）
+- 第 1 行 = 锚点（注入到该行之后）
+- 第 2 行 = 补丁标记（用于幂等检测）
+- 其余 = 注入内容
 
 ---
 

@@ -14,6 +14,8 @@ CLAUDE_DIR="${HOME}/.claude"
 AGENTS_DIR="${CLAUDE_DIR}/agents"
 SKILLS_DIR="${CLAUDE_DIR}/skills"
 HOOKS_DIR="${CLAUDE_DIR}/hooks"
+PATCHES_DIR="${CLAUDE_DIR}/patches"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # --- Helpers ---
 
@@ -61,11 +63,24 @@ show_status() {
     warn "Superpowers plugin not found"
   fi
 
-  # Hook
-  if [ -f "${HOOKS_DIR}/agency-superpowers.sh" ]; then
-    ok "Hook installed"
+  # Patcher hook
+  if [ -f "${HOOKS_DIR}/agency-superpowers-patcher.sh" ]; then
+    ok "Patcher hook installed"
+  elif [ -f "${HOOKS_DIR}/agency-superpowers.sh" ]; then
+    warn "Legacy hook found (consider re-running setup.sh to upgrade to patcher)"
   else
     warn "Hook not installed"
+  fi
+
+  # Patches
+  local patch_count=0
+  if [ -d "${PATCHES_DIR}" ]; then
+    patch_count=$(ls -1 "${PATCHES_DIR}"/*.patch.md 2>/dev/null | wc -l | tr -d ' ')
+  fi
+  if [ "$patch_count" -gt 0 ]; then
+    ok "Patches installed (${patch_count} files)"
+  else
+    warn "No patches installed"
   fi
 
   # Agents
@@ -228,229 +243,54 @@ install_gstack() {
   ok "Gstack Skills installed"
 }
 
-# --- Hook Generator (detection-based) ---
+# --- Patcher + Patches Installer ---
 
 install_hook() {
-  step "Generating hook"
+  step "Installing patcher hook + patches"
 
-  mkdir -p "${HOOKS_DIR}"
+  mkdir -p "${HOOKS_DIR}" "${PATCHES_DIR}"
 
-  cat > "${HOOKS_DIR}/agency-superpowers.sh" << 'HOOKSCRIPT'
-#!/usr/bin/env bash
-# Auto-detecting hook: outputs instructions based on what's installed
+  # Remove legacy hook if exists
+  if [ -f "${HOOKS_DIR}/agency-superpowers.sh" ]; then
+    rm "${HOOKS_DIR}/agency-superpowers.sh"
+    info "Removed legacy hook (agency-superpowers.sh)"
+  fi
 
-AGENTS_DIR="$HOME/.claude/agents"
-SKILLS_DIR="$HOME/.claude/skills"
+  # Copy patcher script
+  cp "${SCRIPT_DIR}/patcher.sh" "${HOOKS_DIR}/agency-superpowers-patcher.sh"
+  chmod +x "${HOOKS_DIR}/agency-superpowers-patcher.sh"
+  info "Installed patcher hook"
 
-echo '<AGENCY_SUPERPOWERS>'
-echo ''
-echo '## Superpowers Integration Layer'
-echo ''
-echo 'These instructions SUPPLEMENT the superpowers skills. They apply on top of brainstorming, writing-plans, and subagent-driven-development. Follow them in addition to the skill'"'"'s own process.'
+  # Copy patch files
+  local patch_count=0
+  for patch_file in "${SCRIPT_DIR}/patches"/*.patch.md; do
+    [ -f "$patch_file" ] || continue
+    cp "$patch_file" "${PATCHES_DIR}/"
+    ((patch_count++))
+  done
+  info "Installed ${patch_count} patch files"
 
-# --- Design Skills Section (if installed) ---
-if [ -d "$SKILLS_DIR/ui-ux-pro-max" ]; then
-cat << 'DESIGN_SECTION'
+  # Run patcher immediately to apply patches
+  bash "${HOOKS_DIR}/agency-superpowers-patcher.sh" 2>/dev/null || true
 
-### Design Skills Reference
-
-Seven design skills are available at `~/.claude/skills/`. Subagents can use them via Bash (scripts) or by reading SKILL.md for workflow guidance.
-
-| Skill | What it does | When to use |
-|---|---|---|
-| `ui-ux-pro-max` | Design intelligence: 67 styles, 161 palettes, 57 fonts, 99 UX rules, search.py engine | Any UI/UX work — always start here |
-| `design` | Logo (55 styles, Gemini), CIP mockups, icon design, social photos | Brand visual asset creation |
-| `brand` | Brand voice, visual identity, messaging frameworks, consistency audit | Branded content, tone of voice |
-| `banner-design` | 22 styles of banners for social/ads/web/print | Marketing visuals, ad creatives |
-| `ui-styling` | shadcn/ui + Tailwind CSS + dark mode + a11y components | Code-level UI implementation |
-| `design-system` | Three-layer tokens (primitive→semantic→component), CSS variables | Design token architecture |
-| `slides` | HTML presentations with Chart.js, copywriting formulas | Slide decks, data presentations |
-
-**Dependency chain:** `brand` + `design-system` → `ui-styling` → `design` → `banner-design` / `slides`
-DESIGN_SECTION
-fi
-
-# --- Brainstorming Section ---
-cat << 'BRAINSTORM_SECTION'
-
-### When using `brainstorming`
-
-After exploring project context and BEFORE asking clarifying questions:
-BRAINSTORM_SECTION
-
-if [ -d "$SKILLS_DIR/ui-ux-pro-max" ]; then
-cat << 'BRAINSTORM_DESIGN'
-
-1. **If the project involves UI/UX** (website, app, landing page, dashboard, component design), first run the design system generator to ground the discussion in data-driven recommendations:
-   ```
-   python3 ~/.claude/skills/ui-ux-pro-max/scripts/search.py "<product_type> <industry> <keywords>" --design-system
-   ```
-   Use the output (style, colors, typography, anti-patterns) as input to the brainstorming discussion.
-
-2. **If the project involves branding** (new brand, rebranding, branded content), read `~/.claude/skills/brand/SKILL.md` for brand voice and visual identity framework.
-BRAINSTORM_DESIGN
-fi
-
-if [ -L "$AGENTS_DIR/marketing" ] || [ -L "$AGENTS_DIR/product" ]; then
-cat << 'BRAINSTORM_AGENTS'
-
-Identify which domain expert roles are relevant to this project. Then dispatch a domain expert consultation subagent for each relevant role, asking them to contribute their perspective to the design. Incorporate their input into the clarifying questions and approach proposals.
-
-**Role selection guide:**
-
-| Project type | Relevant roles |
-|---|---|
-| Ad / marketing landing page | Ad Creative Strategist, Conversion Copywriter, UX Architect, Paid Social Strategist |
-| Consumer product / app | Product Designer, UX Architect, Growth Hacker |
-| B2B SaaS | Product Manager, Sales Engineer, UX Architect |
-| Game / entertainment | Game Designer, Creative Director, Narrative Designer |
-| Internal tool / dashboard | UX Architect, Data Analyst |
-| API / developer tool | Developer Advocate, Technical Writer |
-| E-commerce | Conversion Rate Optimizer, Brand Strategist, UX Architect |
-| Payment system / fintech | Compliance Auditor, Security Engineer, Backend Architect |
-| Microservices / infrastructure | SRE, Backend Architect, DevOps Automator |
-
-**How to consult a domain expert:**
-Dispatch a subagent for each relevant role. If the role name matches an available `subagent_type` (from `.claude/agents/`), use that subagent_type to load the full agent definition. Otherwise, fall back to `subagent_type=general-purpose` with role framing.
-
-> "You are a [Role]. The user wants to build: [brief description].
-> Provide your top 3-5 observations, risks, and recommendations from your domain perspective. Be specific and opinionated. 2-3 sentences each."
-
-Collect responses, then synthesize into your clarifying questions and approach proposals. Attribute insights: "从合规角度..." / "安全工程师建议..."
-BRAINSTORM_AGENTS
-fi
-
-# --- Writing Plans Section ---
-cat << 'PLANS_SECTION'
-
-### When using `writing-plans`
-
-After writing the plan and BEFORE dispatching the plan-document-reviewer:
-1. Assign a domain expert role to each task via `**Role:**` field
-2. For architecture-heavy plans, recommend running `/architecture-review`
-
-**Role assignment examples:**
-
-| Task type | Assign role | Skill integration |
-|---|---|---|
-PLANS_SECTION
-
-if [ -d "$SKILLS_DIR/ui-ux-pro-max" ]; then
-cat << 'PLANS_DESIGN'
-| Visual layout, component design | UI Designer | → `ui-ux-pro-max` (search.py --domain style) |
-| User flow, interaction design | UX Architect | → `ui-ux-pro-max` (search.py --domain ux) |
-| Color palette, typography | UI Designer | → `ui-ux-pro-max` (search.py --domain color/typography) |
-| Charts, data visualization | UI Designer | → `ui-ux-pro-max` (search.py --domain chart) |
-| shadcn/ui components, Tailwind | UI Developer | → `ui-styling` |
-| Design tokens, CSS variables | UI Developer | → `design-system` |
-| Logo, icon, CIP mockups | Visual Designer | → `design` |
-| Banner, ad creative, social images | Visual Designer | → `banner-design` |
-| Brand voice, messaging, style guide | Brand Strategist | → `brand` |
-| Slides, presentations | Content Designer | → `slides` |
-PLANS_DESIGN
-fi
-
-cat << 'PLANS_COMMON'
-| Copywriting, headlines, CTAs | Conversion Copywriter | |
-| Analytics, UTM, tracking | Growth Analyst | |
-| SEO, meta tags | SEO Strategist | |
-| Security-sensitive changes | | → recommend `/security-audit` after implementation |
-| Architecture changes (8+ files) | | → recommend `/architecture-review` before implementation |
-| API integration, backend | Backend Engineer | |
-| General implementation | Senior Software Engineer | |
-PLANS_COMMON
-
-# --- Subagent-Driven Development Section ---
-cat << 'SUBAGENT_SECTION'
-
-### When using `subagent-driven-development`
-
-When dispatching implementer subagents, use the `**Role:**` field from the plan to select the subagent type:
-SUBAGENT_SECTION
-
-if [ -L "$AGENTS_DIR/marketing" ] || [ -L "$AGENTS_DIR/product" ]; then
-cat << 'SUBAGENT_AGENTS'
-
-1. **If the Role matches an available `subagent_type`** (from `.claude/agents/`): use that `subagent_type` instead of `general-purpose`. This loads the full agent definition (identity, rules, workflow, output format), overriding the template's default `general-purpose`.
-2. **If no matching `subagent_type` exists**: fall back to `general-purpose` and prepend role framing in the prompt.
-SUBAGENT_AGENTS
-fi
-
-cat << 'SUBAGENT_COMMON'
-
-In all cases, prepend in the implementer prompt:
-
-> "You are a [Role]. Bring your domain expertise to this task. [Role-specific lens: e.g., 'Think about compliance impact', 'Consider failure modes', 'Optimize for observability'.]"
-
-If the plan has no role assigned, infer the appropriate role from the task description before dispatching.
-SUBAGENT_COMMON
-
-if [ -d "$SKILLS_DIR/ui-ux-pro-max" ]; then
-cat << 'SUBAGENT_DESIGN'
-
-**Design skill integration for subagents:**
-
-When a task involves design work, the implementer subagent MUST use the relevant skill BEFORE writing code. Match by task type:
-
-| Task involves | Skill to use | How |
-|---|---|---|
-| New project / new page | `ui-ux-pro-max` | `python3 ~/.claude/skills/ui-ux-pro-max/scripts/search.py "<keywords>" --design-system -p "<project>"` |
-| Style / visual design | `ui-ux-pro-max` | `python3 ~/.claude/skills/ui-ux-pro-max/scripts/search.py "<keywords>" --domain style` |
-| Color palette | `ui-ux-pro-max` | `python3 ~/.claude/skills/ui-ux-pro-max/scripts/search.py "<keywords>" --domain color` |
-| Typography / fonts | `ui-ux-pro-max` | `python3 ~/.claude/skills/ui-ux-pro-max/scripts/search.py "<keywords>" --domain typography` |
-| Charts / data viz | `ui-ux-pro-max` | `python3 ~/.claude/skills/ui-ux-pro-max/scripts/search.py "<keywords>" --domain chart` |
-| UX patterns / a11y | `ui-ux-pro-max` | `python3 ~/.claude/skills/ui-ux-pro-max/scripts/search.py "<keywords>" --domain ux` |
-| Stack best practices | `ui-ux-pro-max` | `python3 ~/.claude/skills/ui-ux-pro-max/scripts/search.py "<keywords>" --stack <stack>` |
-| shadcn/ui, Tailwind styling | `ui-styling` | Read `~/.claude/skills/ui-styling/SKILL.md` for component patterns and Tailwind conventions |
-| Design tokens, CSS vars | `design-system` | Read `~/.claude/skills/design-system/SKILL.md`; run token generation scripts |
-| Logo generation | `design` | Read `~/.claude/skills/design/SKILL.md` § Logo; run `scripts/logo/generate.py` |
-| Icon design | `design` | Read `~/.claude/skills/design/SKILL.md` § Icon; run `scripts/icon/generate.py` |
-| CIP / brand mockups | `design` | Read `~/.claude/skills/design/SKILL.md` § CIP; run `scripts/cip/generate.py` |
-| Social media images | `design` | Read `~/.claude/skills/design/SKILL.md` § Social Photos; HTML→screenshot workflow |
-| Banner / ad creative | `banner-design` | Read `~/.claude/skills/banner-design/SKILL.md`; follows art direction → HTML → export pipeline |
-| Brand voice, messaging | `brand` | Read `~/.claude/skills/brand/SKILL.md`; check `docs/brand-guidelines.md` if exists |
-| Presentation slides | `slides` | Read `~/.claude/skills/slides/SKILL.md`; use Chart.js for data slides |
-
-The search output and skill guidance provide data-driven recommendations. Use these as constraints when implementing, not just as suggestions.
-SUBAGENT_DESIGN
-fi
-
-# --- Completing Implementation Section ---
-cat << 'COMPLETE_SECTION'
-
-### When completing implementation
-
-Before claiming work is done, recommend relevant skills based on change scope:
-- Security-sensitive code → `/security-audit`
-- PR ready for merge → `/requesting-code-review` (superpowers subagent)
-- Bug fix → `/systematic-debugging` methodology was hopefully already used
-- Architecture change → `/architecture-review` should have been done at plan stage
-COMPLETE_SECTION
-
-if [ -d "$SKILLS_DIR/ui-ux-pro-max" ]; then
-cat << 'COMPLETE_DESIGN'
-- UI/UX changes → run `python3 ~/.claude/skills/ui-ux-pro-max/scripts/search.py "accessibility animation z-index loading" --domain ux` as pre-delivery UX validation
-- Brand/visual assets → verify against `brand` skill guidelines and brand-guidelines.md if exists
-- Design tokens → validate token hierarchy (primitive→semantic→component) per `design-system` skill
-COMPLETE_DESIGN
-fi
-
-echo ''
-echo '</AGENCY_SUPERPOWERS>'
-HOOKSCRIPT
-
-  chmod +x "${HOOKS_DIR}/agency-superpowers.sh"
-  ok "Hook generated (auto-detects installed components)"
+  ok "Patcher hook + patches installed (zero token consumption per session)"
 }
 
 install_settings() {
-  step "Registering hook in settings.json"
+  step "Registering patcher hook in settings.json"
 
   local settings_file="${CLAUDE_DIR}/settings.json"
 
-  # Check if hook already registered
+  # Check if patcher already registered
+  if [ -f "${settings_file}" ] && grep -q "agency-superpowers-patcher.sh" "${settings_file}" 2>/dev/null; then
+    ok "Patcher hook already registered in settings.json"
+    return
+  fi
+
+  # Migrate from legacy hook if present
   if [ -f "${settings_file}" ] && grep -q "agency-superpowers.sh" "${settings_file}" 2>/dev/null; then
-    ok "Hook already registered in settings.json"
+    sed -i '' 's/agency-superpowers\.sh/agency-superpowers-patcher.sh/g' "${settings_file}"
+    ok "Migrated settings.json from legacy hook to patcher"
     return
   fi
 
@@ -464,7 +304,7 @@ install_settings() {
         "hooks": [
           {
             "type": "command",
-            "command": "bash $HOME/.claude/hooks/agency-superpowers.sh",
+            "command": "bash $HOME/.claude/hooks/agency-superpowers-patcher.sh",
             "timeout": 5
           }
         ]
@@ -473,15 +313,15 @@ install_settings() {
   }
 }
 SETTINGSEOF
-    ok "Created settings.json with hook"
+    ok "Created settings.json with patcher hook"
   else
-    warn "settings.json exists but hook not found — please add manually:"
+    warn "settings.json exists but patcher not found — please add manually:"
     echo ""
     echo '  "hooks": {'
     echo '    "SessionStart": [{'
     echo '      "hooks": [{'
     echo '        "type": "command",'
-    echo '        "command": "bash $HOME/.claude/hooks/agency-superpowers.sh",'
+    echo '        "command": "bash $HOME/.claude/hooks/agency-superpowers-patcher.sh",'
     echo '        "timeout": 5'
     echo '      }]'
     echo '    }]'

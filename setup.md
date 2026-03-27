@@ -151,17 +151,40 @@ cp ~/develop/code/git/gstack/plan-eng-review/SKILL.md ~/.claude/skills/architect
 | `/security-audit` | 安全审计（OWASP+STRIDE、17 条误报排除、8/10 置信度门槛） | gstack `/cso` |
 | `/architecture-review` | 架构评审（15 认知模式、ASCII 覆盖图、E2E 决策矩阵） | gstack `/plan-eng-review` |
 
-### 第五步：安装 Hook 和注册
+### 第五步：安装 Patcher Hook 和补丁
 
-如果你用了自动安装，这步已经做好了。手动安装的话，运行：
+如果你用了自动安装，这步已经做好了。手动安装的话：
 
 ```bash
-# setup.sh 会生成自适应 hook 并注册到 settings.json
-cd ~/develop/code/git/superpowers-crew
-./setup.sh  # 只会安装 hook，不会重复安装已有组件
+# 复制 patcher 脚本
+mkdir -p ~/.claude/hooks ~/.claude/patches
+cp ~/develop/code/git/superpowers-crew/patcher.sh ~/.claude/hooks/agency-superpowers-patcher.sh
+chmod +x ~/.claude/hooks/agency-superpowers-patcher.sh
+
+# 复制补丁文件
+cp ~/develop/code/git/superpowers-crew/patches/*.patch.md ~/.claude/patches/
+
+# 立即执行一次打补丁
+bash ~/.claude/hooks/agency-superpowers-patcher.sh
 ```
 
-或参考 `setup.sh` 中 `install_hook()` 和 `install_settings()` 函数的内容手动创建。
+然后在 `~/.claude/settings.json` 中注册 hook（如果还没有）：
+
+```json
+{
+  "hooks": {
+    "SessionStart": [{
+      "hooks": [{
+        "type": "command",
+        "command": "bash $HOME/.claude/hooks/agency-superpowers-patcher.sh",
+        "timeout": 5
+      }]
+    }]
+  }
+}
+```
+
+**工作原理：** Patcher 在每次对话启动时运行，检测 Superpowers skill 文件是否已打补丁。已打补丁则静默退出（零 token 消耗），未打补丁则自动注入。插件更新覆盖源文件后，下次启动自动重新打补丁。
 
 ---
 
@@ -188,9 +211,14 @@ diff ~/develop/code/git/gstack/plan-eng-review/SKILL.md ~/.claude/skills/archite
 重新启动一个 Claude Code 会话（新窗口，非 `/clear`）：
 
 1. **Superpowers**：发起任意开发请求，应自动进入 brainstorm -> plan -> execute 流程
-2. **Agency + Superpowers 联动**：brainstorming 时 Claude 应自动派遣领域专家 subagent，并使用 `subagent_type` 加载 agent 定义
-3. **Design Skills**：涉及 UI/UX 的请求应自动调用 `search.py`，设计任务应引用对应 skill
-4. **Gstack Skills**：输入 `/security-audit`、`/architecture-review`，应能识别为 slash command
+2. **Patcher 补丁验证**：检查 skill 源文件是否已注入补丁内容：
+   ```bash
+   grep -c "PATCH:" ~/.claude/plugins/cache/claude-plugins-official/superpowers/*/skills/brainstorming/SKILL.md
+   # 应输出 1
+   ```
+3. **Agency + Superpowers 联动**：brainstorming 时 Claude 应自动派遣领域专家 subagent（指令已在 skill 的 checklist 中）
+4. **Design Skills**：涉及 UI/UX 的请求应自动调用 `search.py`，设计任务应引用对应 skill
+5. **Gstack Skills**：输入 `/security-audit`、`/architecture-review`，应能识别为 slash command
 
 ---
 
@@ -200,7 +228,13 @@ diff ~/develop/code/git/gstack/plan-eng-review/SKILL.md ~/.claude/skills/archite
 ~/.claude/
   settings.json                          # hooks 注册
   hooks/
-    agency-superpowers.sh                # SessionStart hook（自适应，联动四层）
+    agency-superpowers-patcher.sh        # SessionStart hook（检测+打补丁，零 token）
+  patches/                               # 补丁文件（注入 superpowers skill 源文件）
+    brainstorming.patch.md
+    writing-plans.patch.md
+    subagent-driven-development.patch.md
+    executing-plans.patch.md
+    verification-before-completion.patch.md
   agents/                                # Agency Agents 角色（symlink）
     academic/ -> .../agency-agents/academic/
     marketing/ -> .../agency-agents/marketing/
