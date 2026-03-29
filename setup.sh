@@ -207,40 +207,22 @@ install_design() {
 }
 
 install_gstack() {
-  step "Installing Gstack Skills"
-
-  local repo_dir="${GIT_DIR}/gstack"
-
-  # Clone if not exists
-  if [ ! -d "${repo_dir}" ]; then
-    info "Cloning gstack..."
-    mkdir -p "${GIT_DIR}"
-    git clone --depth 1 https://github.com/garrytan/gstack.git "${repo_dir}"
-  else
-    ok "gstack repo already exists"
-  fi
+  step "Installing Gstack Skills (cleaned, no gstack dependency)"
 
   mkdir -p "${SKILLS_DIR}"
 
-  # Install security-audit (from gstack /cso)
-  if [ -d "${repo_dir}/cso" ]; then
-    mkdir -p "${SKILLS_DIR}/security-audit"
-    cp "${repo_dir}/cso/SKILL.md" "${SKILLS_DIR}/security-audit/SKILL.md"
-    info "Installed security-audit"
-  else
-    warn "gstack /cso not found"
-  fi
+  # Install from superpowers-crew bundled skills (gstack boilerplate removed)
+  for skill in security-audit architecture-review; do
+    if [ -f "${SCRIPT_DIR}/skills/${skill}/SKILL.md" ]; then
+      mkdir -p "${SKILLS_DIR}/${skill}"
+      cp "${SCRIPT_DIR}/skills/${skill}/SKILL.md" "${SKILLS_DIR}/${skill}/SKILL.md"
+      info "Installed ${skill}"
+    else
+      warn "${skill}/SKILL.md not found in ${SCRIPT_DIR}/skills/"
+    fi
+  done
 
-  # Install architecture-review (from gstack /plan-eng-review)
-  if [ -d "${repo_dir}/plan-eng-review" ]; then
-    mkdir -p "${SKILLS_DIR}/architecture-review"
-    cp "${repo_dir}/plan-eng-review/SKILL.md" "${SKILLS_DIR}/architecture-review/SKILL.md"
-    info "Installed architecture-review"
-  else
-    warn "gstack /plan-eng-review not found"
-  fi
-
-  ok "Gstack Skills installed"
+  ok "Gstack Skills installed (cleaned versions, zero external dependencies)"
 }
 
 # --- Patcher + Patches Installer ---
