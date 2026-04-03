@@ -71,7 +71,10 @@ apply_patch() {
   escaped_anchor=$(escape_for_grep "$anchor")
 
   # Verify anchor exists in skill file
-  grep -q "$escaped_anchor" "$skill_file" 2>/dev/null || return 0
+  if ! grep -q "$escaped_anchor" "$skill_file" 2>/dev/null; then
+    echo "[patcher] WARNING: anchor not found in $(basename "$skill_file") for patch '${marker}'. Superpowers plugin may have updated." >&2
+    return 0
+  fi
 
   # Build patched file
   local tmpfile
