@@ -11,7 +11,7 @@ NC='\033[0m'
 
 GIT_DIR="${HOME}/develop/code/git"
 CLAUDE_DIR="${HOME}/.claude"
-AGENTS_DIR="${CLAUDE_DIR}/agents"
+CREW_ARCHIVE="${CLAUDE_DIR}/crew-archive"
 SKILLS_DIR="${CLAUDE_DIR}/skills"
 HOOKS_DIR="${CLAUDE_DIR}/hooks"
 PATCHES_DIR="${CLAUDE_DIR}/patches"
@@ -83,12 +83,19 @@ show_status() {
     warn "No patches installed"
   fi
 
-  # Agents
-  if [ -d "${AGENTS_DIR}" ] && [ "$(ls -A "${AGENTS_DIR}" 2>/dev/null)" ]; then
-    local count=$(ls -1 "${AGENTS_DIR}" | wc -l | tr -d ' ')
-    ok "Agency Agents installed (${count} entries)"
+  # Crew Archive
+  if [ -d "${CREW_ARCHIVE}" ] && [ "$(ls -A "${CREW_ARCHIVE}" 2>/dev/null)" ]; then
+    local count=$(find "${CREW_ARCHIVE}" -follow -name "*.md" ! -name "README.md" 2>/dev/null | wc -l | tr -d ' ')
+    ok "Crew Archive installed (${count} entries in crew-archive/)"
   else
-    warn "Agency Agents not installed"
+    warn "Crew Archive not installed"
+  fi
+
+  # Skill Router
+  if [ -d "${SKILLS_DIR}/skill-router" ]; then
+    ok "Skill Router installed"
+  else
+    warn "Skill Router not installed"
   fi
 
   # Design Skills
@@ -131,7 +138,7 @@ install_superpowers() {
 }
 
 install_agents() {
-  step "Installing Agency Agents"
+  step "Installing Agency Agents → crew-archive (zero context overhead)"
 
   local repo_dir="${GIT_DIR}/agency-agents"
 
@@ -144,29 +151,61 @@ install_agents() {
     ok "agency-agents repo already exists"
   fi
 
-  mkdir -p "${AGENTS_DIR}"
+  # Migrate: remove old ~/.claude/agents/ if it exists
+  if [ -d "${CLAUDE_DIR}/agents" ]; then
+    warn "Migrating old ~/.claude/agents/ → crew-archive/"
+    rm -rf "${CLAUDE_DIR}/agents"
+  fi
 
-  # Symlink non-engineering directories
+  mkdir -p "${CREW_ARCHIVE}"
+
+  # Symlink non-engineering directories into crew-archive
   for dir in academic examples marketing paid-media product project-management sales specialized support game-development; do
     if [ -d "${repo_dir}/${dir}" ]; then
-      ln -sfn "${repo_dir}/${dir}" "${AGENTS_DIR}/${dir}"
+      ln -sfn "${repo_dir}/${dir}" "${CREW_ARCHIVE}/${dir}"
       info "Linked ${dir}/"
     fi
   done
 
   # Design: only keep inclusive-visuals-specialist (others covered by design skills)
   if [ -f "${repo_dir}/design/design-inclusive-visuals-specialist.md" ]; then
-    ln -sf "${repo_dir}/design/design-inclusive-visuals-specialist.md" "${AGENTS_DIR}/design-inclusive-visuals-specialist.md"
+    ln -sf "${repo_dir}/design/design-inclusive-visuals-specialist.md" "${CREW_ARCHIVE}/design-inclusive-visuals-specialist.md"
     info "Linked design-inclusive-visuals-specialist.md"
   fi
 
   # Single engineering role
   if [ -f "${repo_dir}/engineering/engineering-incident-response-commander.md" ]; then
-    ln -sf "${repo_dir}/engineering/engineering-incident-response-commander.md" "${AGENTS_DIR}/engineering-incident-response-commander.md"
+    ln -sf "${repo_dir}/engineering/engineering-incident-response-commander.md" "${CREW_ARCHIVE}/engineering-incident-response-commander.md"
     info "Linked engineering-incident-response-commander.md"
   fi
 
-  ok "Agency Agents installed"
+  ok "Agency Agents installed to crew-archive/"
+
+  # Build registry for skill-router
+  install_skill_router
+}
+
+install_skill_router() {
+  step "Installing Skill Router (crew-archive search layer)"
+
+  local router_dir="${SKILLS_DIR}/skill-router"
+  mkdir -p "${router_dir}/scripts" "${router_dir}/data"
+
+  # Copy skill-router files from repo
+  cp "${SCRIPT_DIR}/skill-router/SKILL.md" "${router_dir}/"
+  cp "${SCRIPT_DIR}/skill-router/scripts/search.py" "${router_dir}/scripts/"
+  cp "${SCRIPT_DIR}/skill-router/scripts/build_registry.py" "${router_dir}/scripts/"
+
+  # Build registry from crew-archive
+  if [ -d "${CREW_ARCHIVE}" ]; then
+    info "Building registry.csv from crew-archive..."
+    python3 "${router_dir}/scripts/build_registry.py" --dir "${CREW_ARCHIVE}" --output "${router_dir}/data/registry.csv" 2>/dev/null
+    local count=$(tail -n +2 "${router_dir}/data/registry.csv" 2>/dev/null | wc -l | tr -d ' ')
+    ok "Skill Router installed (${count} entries indexed)"
+  else
+    warn "crew-archive/ not found, registry.csv will be empty"
+    ok "Skill Router installed (run build_registry.py after adding content)"
+  fi
 }
 
 install_design() {

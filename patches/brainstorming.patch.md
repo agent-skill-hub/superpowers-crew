@@ -19,26 +19,21 @@ If the project involves branding (new brand, rebranding, branded content), read 
 
 #### B. Domain Expert Consultation
 
-Identify which domain expert roles are relevant to this project. Then dispatch a domain expert consultation subagent for each relevant role, asking them to contribute their perspective to the design. Incorporate their input into the clarifying questions and approach proposals.
+Identify which domain expert roles are relevant to this project. Search the agent archive for matching specialists, then dispatch them for consultation.
 
-**Role selection guide:**
+**How to consult domain experts:**
 
-| Project type | Relevant roles |
-|---|---|
-| Ad / marketing landing page | Ad Creative Strategist, Conversion Copywriter, UX Architect, Paid Social Strategist |
-| Consumer product / app | Product Designer, UX Architect, Growth Hacker |
-| B2B SaaS | Product Manager, Sales Engineer, UX Architect |
-| Game / entertainment | Game Designer, Creative Director, Narrative Designer |
-| Internal tool / dashboard | UX Architect, Data Analyst |
-| API / developer tool | Developer Advocate, Technical Writer |
-| E-commerce | Conversion Rate Optimizer, Brand Strategist, UX Architect |
-| Payment system / fintech | Compliance Auditor, Security Engineer, Backend Architect |
-| Microservices / infrastructure | SRE, Backend Architect, DevOps Automator |
+1. Search the archive for relevant experts:
+```bash
+python ~/.claude/skills/skill-router/scripts/search.py "project-relevant keywords" --top 5
+```
 
-**How to consult a domain expert:**
-Dispatch a subagent for each relevant role. If the role name matches an available `subagent_type` (from `.claude/agents/`), use that subagent_type to load the full agent definition. Otherwise, fall back to `subagent_type=general-purpose` with role framing.
+2. For each matched agent, Read its .md file to get the full role definition
+3. Dispatch a `general-purpose` subagent with the agent definition as role context:
 
-> "You are a [Role]. The user wants to build: [brief description].
+> "You are a [Role from agent .md]. The user wants to build: [brief description].
 > Provide your top 3-5 observations, risks, and recommendations from your domain perspective. Be specific and opinionated. 2-3 sentences each."
 
-Collect responses, then synthesize into your clarifying questions and approach proposals. Attribute insights where relevant.
+4. Collect responses, then synthesize into your clarifying questions and approach proposals. Attribute insights where relevant.
+
+**Note:** If skill-router returns no matches, skip expert consultation — `general-purpose` without domain framing adds little value.

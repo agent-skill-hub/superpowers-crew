@@ -5,7 +5,11 @@
 
 When executing tasks from the plan, check if each task has a `**Role:**` field assigned during planning:
 
-1. **If the task has a Role with a matching `subagent_type`** (from `~/.claude/agents/`): bring that role's domain expertise to the execution — consider the task through that role's lens.
+1. **If the task has a Role**: search the agent archive for a matching specialist:
+   ```bash
+   python ~/.claude/skills/skill-router/scripts/search.py "Role keywords"
+   ```
+   If matched, Read the agent .md and apply that role's domain expertise to the execution.
 2. **If the task involves design work**: use the relevant design skill BEFORE writing code (see skill mapping in the plan's Role assignment table).
 3. **If no Role is assigned**: infer the appropriate role from the task description.
 

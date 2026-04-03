@@ -5,8 +5,12 @@
 
 When dispatching implementer subagents, use the `**Role:**` field from the plan to select the subagent type:
 
-1. **If the Role matches an available `subagent_type`** (from `.claude/agents/`): use that `subagent_type` instead of `general-purpose`. This loads the full agent definition (identity, rules, workflow, output format).
-2. **If no matching `subagent_type` exists**: fall back to `general-purpose` and prepend role framing in the prompt.
+1. **Search the agent archive** for a matching specialist:
+   ```bash
+   python ~/.claude/skills/skill-router/scripts/search.py "Role keywords"
+   ```
+   If matched, Read the agent .md and inject its full definition into the `general-purpose` subagent prompt as role context.
+2. **If no match found**: use `general-purpose` with role framing in the prompt.
 
 In all cases, prepend in the implementer prompt:
 

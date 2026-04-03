@@ -16,9 +16,29 @@
 | 领域专家层 | [Agency Agents](https://github.com/msitarzewski/agency-agents) | 50+ 非工程角色——营销、产品、销售、游戏、法务……想得到的都有 |
 | 设计智能层 | [ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) | 7 个设计 skill——67 种风格、161 调色板、57 字体、99 UX 规则、搜索引擎 |
 | 工程执行层 | [Gstack](https://github.com/garrytan/gstack) 精简版 | security-audit + architecture-review，交付前最后一道关 |
-| 集成层 | Patcher（本项目） | 把领域专家和设计 skill 直接注入 Superpowers 的 skill 源文件，零 token 消耗 |
+| 集成层 | Patcher + Skill Router（本项目） | Patcher 注入流程指令，Skill Router 按需发现专家，零上下文污染 |
 
-一句话总结：**Superpowers 管流程，Agency Agents 管视角，Design Skills 管美学，Gstack 管底线，Patcher 把它们焊在一起。**
+一句话总结：**Superpowers 管流程，Skill Router 管发现，Agency Agents 管视角，Design Skills 管美学，Gstack 管底线。**
+
+---
+
+## 核心设计：零上下文污染
+
+传统方式把所有 agent/skill 描述加载到每轮对话的上下文中，100+ 个 agent 消耗 ~10000 tokens/轮。
+
+**Superpowers Crew 的做法不同：**
+
+```
+~/.claude/skills/          ← 热区：高频 skill，描述每轮携带（~500 tokens）
+~/.claude/crew-archive/    ← 冷区：100+ agent/skill，零上下文开销
+~/.claude/skills/skill-router/  ← 唯一入口：1 条描述占位，按需语义搜索
+```
+
+- **冷区内容**通过 `registry.csv`（Name + Description + Path）索引
+- **需要时**：Skill Router dispatch subagent 读 registry.csv 做语义匹配，返回最佳结果
+- **不需要时**：零 token 消耗，就像不存在
+
+即使融入上千个外部 agent/skill，上下文开销始终为 1 条 skill-router 描述。
 
 ---
 
@@ -28,12 +48,10 @@
 
 装上这套系统之后：
 
-- **Brainstorming 阶段** —— skill 内置领域专家派发步骤，产品经理问"用户真的需要这个吗"，安全专家问"这个接口裸奔没问题吗"；涉及 UI/UX 时自动调用 `search.py` 生成数据驱动的设计建议
+- **Brainstorming 阶段** —— Skill Router 自动搜索最匹配的领域专家，产品经理问"用户真的需要这个吗"，安全专家问"这个接口裸奔没问题吗"；涉及 UI/UX 时自动调用 `search.py` 生成数据驱动的设计建议
 - **Writing Plans 阶段** —— 每个任务自动分配最合适的专家角色和对应的设计 skill，不再是一个人的 TODO list
-- **Execute 阶段** —— subagent 按角色执行并加载完整 agent 定义，设计任务先查 skill 再写代码，营销文案用营销专家视角写
+- **Execute 阶段** —— subagent 按角色执行，Skill Router 找到对应专家定义注入 prompt，设计任务先查 skill 再写代码
 - **Verify 阶段** —— 完成前自动推荐 security-audit、architecture-review、UX 验证，上线前帮你再看一眼
-
-**集成方式：** Patcher 直接修改 Superpowers 的 skill 源文件，指令在 skill 的 checklist 里面而不是外挂 supplement。每次对话零 token 消耗，插件更新后自动重新打补丁。
 
 **不装：** 你是一个全栈开发。
 **装了：** 你是一个全栈开发 + 产品经理 + UI 设计师 + 安全顾问 + 架构师 + 市场总监 + ……
@@ -46,17 +64,16 @@
 用户提出需求
     |
     v
-[Brainstorm] ──> hook 自动派遣领域专家 + 设计智能
+[Brainstorm] ──> Skill Router 搜索匹配专家 + 设计智能
     |                  "从产品/市场/安全/设计多角度审视需求"
     |                  "UI/UX 项目自动运行 search.py --design-system"
     v
 [Plan] ──> 每个任务分配专家角色 + 设计 skill
     |          "安全相关任务 -> 安全专家"
     |          "视觉设计任务 -> UI Designer -> ui-ux-pro-max"
-    |          "品牌任务 -> Brand Strategist -> brand skill"
     v
-[Execute] ──> subagent 按角色 + skill 执行
-    |              "匹配 subagent_type 加载完整 agent 定义"
+[Execute] ──> Skill Router 加载专家定义 + skill 指令
+    |              "读取 .md 注入 subagent prompt"
     |              "设计任务先查 skill 再写代码"
     v
 [Verify] ──> security-audit + architecture-review + UX 验证
@@ -75,10 +92,10 @@ Superpowers 是必装的基础层，其它组件按需加装：
 git clone https://github.com/agent-skill-hub/superpowers-crew.git ~/develop/code/git/superpowers-crew
 cd ~/develop/code/git/superpowers-crew
 
-# 只装基础（Superpowers + hook）
+# 只装基础（Superpowers + Skill Router + hook）
 ./setup.sh
 
-# 加装领域专家
+# 加装领域专家（→ crew-archive，零上下文开销）
 ./setup.sh --agents
 
 # 加装设计智能（7 个设计 skill）
@@ -105,7 +122,7 @@ cd ~/develop/code/git/superpowers-crew
 
 ### 领域专家（--agents）
 
-50+ 非工程角色，brainstorming 时由 hook 自动派遣：
+50+ 非工程角色，安装到 `~/.claude/crew-archive/`，通过 Skill Router 按需发现：
 
 | 类别 | 角色示例 |
 |------|---------|
@@ -115,9 +132,21 @@ cd ~/develop/code/git/superpowers-crew
 | 设计 | Inclusive Visuals Specialist（抗 AI 图像偏见） |
 | 游戏 | Psychologist, Narratologist, Geographer, Historian |
 | 运营 | Project Shepherd, Studio Producer, Incident Response Commander |
-| ... | 还有很多，装了自己看 |
+| ... | 还有很多，`python skill-router/scripts/search.py "关键词"` 搜一下 |
 
-你不需要手动选角色。系统根据上下文自动判断该派谁出场，并通过 `subagent_type` 加载完整 agent 定义。
+你不需要手动选角色。Superpowers 流程中 Skill Router 自动搜索最匹配的专家，读取完整定义后注入 subagent。
+
+### Skill Router（自动安装）
+
+crew-archive 的唯一入口。在 `~/.claude/skills/` 中只占一条描述（~50 tokens），按需时 dispatch subagent 读 `registry.csv` 做语义匹配。
+
+```bash
+# 手动搜索（BM25 快速查找）
+python ~/.claude/skills/skill-router/scripts/search.py "compliance audit"
+
+# 新增归档后重建索引
+python ~/.claude/skills/skill-router/scripts/build_registry.py
+```
 
 ### 设计智能（--design）
 
@@ -159,6 +188,18 @@ cd ~/develop/code/git/superpowers-crew
 - 第 1 行 = 锚点（注入到该行之后）
 - 第 2 行 = 补丁标记（用于幂等检测）
 - 其余 = 注入内容
+
+---
+
+## 扩展 crew-archive
+
+你可以往 `~/.claude/crew-archive/` 放任意 .md 文件（agent 或 skill），然后重建索引：
+
+```bash
+python ~/.claude/skills/skill-router/scripts/build_registry.py
+```
+
+即使放入上千个文件，上下文开销始终为零——只有被搜索命中的才会被加载。
 
 ---
 
