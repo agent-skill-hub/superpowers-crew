@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Superpowers Patcher v2 (multi-anchor, section replacement)
+# Superpowers Patcher v3 (awk-based, fast)
 #
 # Runs on SessionStart. Scans ~/.claude/patches/ for *.patch.md files,
 # matches each to a superpowers skill by filename, and applies patches.
@@ -19,6 +19,9 @@
 #
 # Uses .orig backup for idempotent restore-and-reapply on every session.
 # Outputs nothing to stdout (zero token consumption).
+#
+# v3: Rewrote parse_blocks + apply_blocks as single awk pass per file pair.
+#     ~10x faster than v2's bash while-read loops.
 
 set -euo pipefail
 
@@ -30,8 +33,6 @@ find_latest_version() {
   ls -1 "$PLUGINS_CACHE" | sort -V | tail -1
 }
 
-# Restore from .orig backup, or create one if file is clean.
-# Returns 1 if file is patched without backup (needs migration).
 ensure_original() {
   local skill_file="$1"
   local orig_file="${skill_file}.orig"
@@ -49,118 +50,74 @@ ensure_original() {
   return 0
 }
 
-# Parse patch file into block files under tmpdir.
-# Each block: N.anchor, N.content, N.mode, N.level
-# Prints block count to stdout.
-parse_blocks() {
-  local patch_file="$1"
-  local tmpdir="$2"
-  local idx=-1
-  local has_marker=false
-
-  while IFS= read -r line || [ -n "$line" ]; do
-    if [[ "$line" == *"<!-- ANCHOR:"*"-->"* ]]; then
-      idx=$((idx + 1))
-      local anchor
-      anchor=$(echo "$line" | sed -n 's/.*<!-- ANCHOR: \(.*\) -->.*/\1/p')
-      printf '%s' "$anchor" > "$tmpdir/${idx}.anchor"
-      : > "$tmpdir/${idx}.content"
-      has_marker=false
-
-      if [[ "$anchor" == \#* ]]; then
-        printf 'replace' > "$tmpdir/${idx}.mode"
-        local hashes="${anchor%%[^#]*}"
-        printf '%s' "${#hashes}" > "$tmpdir/${idx}.level"
-      else
-        printf 'insert' > "$tmpdir/${idx}.mode"
-        printf '0' > "$tmpdir/${idx}.level"
-      fi
-      continue
-    fi
-
-    if [[ "$line" == *"<!-- PATCH:"*"-->"* ]] && [ "$has_marker" = false ] && [ "$idx" -ge 0 ]; then
-      has_marker=true
-      # Write ANCHOR + PATCH comment lines into content as markers
-      local anchor
-      anchor=$(cat "$tmpdir/${idx}.anchor")
-      printf '<!-- ANCHOR: %s -->\n' "$anchor" >> "$tmpdir/${idx}.content"
-      printf '%s\n' "$line" >> "$tmpdir/${idx}.content"
-      continue
-    fi
-
-    if [ "$idx" -ge 0 ] && [ "$has_marker" = true ]; then
-      printf '%s\n' "$line" >> "$tmpdir/${idx}.content"
-    fi
-  done < "$patch_file"
-
-  echo $((idx + 1))
-}
-
-# Apply parsed blocks to a skill file.
-apply_blocks() {
+# Apply patch blocks to skill file using awk (single pass per file pair).
+# Reads patch_file first to parse anchors/content, then processes skill_file.
+apply_patch() {
   local skill_file="$1"
-  local tmpdir="$2"
-  local num_blocks="$3"
+  local patch_file="$2"
+  local tmp_out="${skill_file}.tmp"
 
-  # Pre-load block data into arrays
-  local -a anchors modes levels
-  for ((i=0; i<num_blocks; i++)); do
-    anchors[$i]=$(cat "$tmpdir/${i}.anchor")
-    modes[$i]=$(cat "$tmpdir/${i}.mode")
-    levels[$i]=$(cat "$tmpdir/${i}.level")
-  done
+  awk '
+  # Phase 1: read patch file (first file argument)
+  NR == FNR {
+    if (index($0, "<!-- ANCHOR:") > 0 && index($0, "-->") > 0) {
+      s = $0
+      sub(/.*<!-- ANCHOR: /, "", s)
+      sub(/ -->.*/, "", s)
+      nb++
+      anchor[nb] = s
+      collecting = 0
+      if (substr(s, 1, 1) == "#") {
+        mode[nb] = "replace"
+        lvl = 0
+        while (substr(s, lvl + 1, 1) == "#") lvl++
+        level[nb] = lvl
+      } else {
+        mode[nb] = "insert"
+        level[nb] = 0
+      }
+    } else if (index($0, "<!-- PATCH:") > 0 && !collecting && nb > 0) {
+      collecting = 1
+      content[nb] = "<!-- ANCHOR: " anchor[nb] " -->\n" $0
+    } else if (collecting && nb > 0) {
+      content[nb] = content[nb] "\n" $0
+    }
+    next
+  }
 
-  local outfile
-  outfile=$(mktemp)
-  local skip_mode=false
-  local skip_level=0
+  # Phase 2: process skill file (second file argument)
+  {
+    if (skip) {
+      if ($0 ~ /^#+[[:space:]]/) {
+        match($0, /^#+/)
+        if (RLENGTH <= skip_lvl) {
+          skip = 0
+          # fall through to anchor matching below
+        } else {
+          next
+        }
+      } else {
+        next
+      }
+    }
 
-  while IFS= read -r line || [ -n "$line" ]; do
-    # In skip mode: wait for next heading at same or higher level
-    if [ "$skip_mode" = true ]; then
-      if [[ "$line" =~ ^(#+)[[:space:]] ]]; then
-        local this_level=${#BASH_REMATCH[1]}
-        if [ "$this_level" -le "$skip_level" ]; then
-          skip_mode=false
-          # Fall through to normal processing below
-        else
-          continue
-        fi
-      else
-        continue
-      fi
-    fi
-
-    # Check if line matches any block's anchor
-    local matched=false
-    for ((i=0; i<num_blocks; i++)); do
-      local escaped
-      escaped=$(printf '%s' "${anchors[$i]}" | sed 's/[][*.\\/^${}()|+?]/\\&/g')
-
-      if printf '%s' "$line" | grep -q "$escaped" 2>/dev/null; then
-        # Output the anchor line (heading / list item)
-        printf '%s\n' "$line" >> "$outfile"
-        printf '\n' >> "$outfile"
-        # Output patch content
-        cat "$tmpdir/${i}.content" >> "$outfile"
-
-        if [ "${modes[$i]}" = "replace" ]; then
-          skip_mode=true
-          skip_level=${levels[$i]}
-        fi
-
-        matched=true
+    matched = 0
+    for (i = 1; i <= nb; i++) {
+      if (index($0, anchor[i]) > 0) {
+        print $0
+        print ""
+        print content[i]
+        if (mode[i] == "replace") {
+          skip = 1
+          skip_lvl = level[i]
+        }
+        matched = 1
         break
-      fi
-    done
-
-    if [ "$matched" = false ]; then
-      printf '%s\n' "$line" >> "$outfile"
-    fi
-  done < "$skill_file"
-
-  cp "$outfile" "$skill_file"
-  rm -f "$outfile"
+      }
+    }
+    if (!matched) print $0
+  }
+  ' "$patch_file" "$skill_file" > "$tmp_out" && mv "$tmp_out" "$skill_file"
 }
 
 # --- Main ---
@@ -193,18 +150,8 @@ for patch_file in "${PATCHES_DIR}"/*.patch.md; do
   skill_file="${SKILLS_DIR}/${skill_name}/SKILL.md"
   [ -f "$skill_file" ] || continue
 
-  # Restore from .orig or create .orig
   ensure_original "$skill_file" || continue
-
-  # Parse and apply
-  tmpdir=$(mktemp -d)
-  num_blocks=$(parse_blocks "$patch_file" "$tmpdir")
-
-  if [ "$num_blocks" -gt 0 ]; then
-    apply_blocks "$skill_file" "$tmpdir" "$num_blocks"
-  fi
-
-  rm -rf "$tmpdir"
+  apply_patch "$skill_file" "$patch_file"
 done
 
 exit 0
