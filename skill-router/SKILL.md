@@ -1,6 +1,6 @@
 ---
 name: skill-router
-description: 统一 skill 发现入口：先匹配 native skills，再搜索归档专家角色。触发词：找专家、找skill、dispatch、哪个角色适合、crew搜索、有没有用来、有没有一个
+description: 统一 skill 发现入口，覆盖 native skills 与归档专家角色。触发词：找专家、找skill、dispatch、哪个角色适合、crew搜索
 ---
 
 # Skill Router
