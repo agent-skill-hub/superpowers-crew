@@ -166,8 +166,10 @@ python ~/.claude/skills/skill-router/scripts/build_registry.py
 
 | Skill | 做什么 |
 |-------|-------|
-| `/security-audit` | OWASP+STRIDE 安全审计，17 条误报排除，8/10 置信度门槛 |
-| `/architecture-review` | 架构评审，15 认知模式，ASCII 覆盖图，E2E 决策矩阵 |
+| `/security-audit` | OWASP+STRIDE 安全审计，17 条误报排除，8/10 置信度门槛，1-10 置信度分级 |
+| `/architecture-review` | 架构评审，15 认知模式，ASCII 覆盖图，E2E/EVAL 决策矩阵，Outside Voice 独立挑战 |
+
+两个 skill 都是从 gstack 上游**只抽方法论、剥掉 harness**的精简版——保留"审什么、怎么审"的判断标准，剥掉 gstack 专有二进制、目录约定、跨 skill 链，以及任何依赖 gstack 运行时的状态语义。从 gstack 上游同步新能力时请参考 [setup.md 第四步](setup.md#第四步安装-gstack-精简版-skills可选) 的精简原则。
 
 ---
 

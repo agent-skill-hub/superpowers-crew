@@ -79,7 +79,11 @@ Before reviewing anything, answer these questions:
 
 5. **Completeness check:** Is the plan doing the complete version or a shortcut? With AI-assisted coding, the cost of completeness (100% test coverage, full edge case handling, complete error paths) is much cheaper than with a human team. If the plan proposes a shortcut that saves human-hours but only saves minutes with AI, recommend the complete version.
 
-6. **Distribution check:** If the plan introduces a new artifact type (CLI binary, library package, container image, mobile app), does it include the build/publish pipeline? Code without distribution is code nobody can use. Check:
+6. **Backlog cross-reference:** Read the project's backlog (issue tracker, TODOS.md, GitHub issues — whatever the project uses) if one exists. Are any deferred items blocking this plan? Can any deferred items be bundled into this PR without expanding scope? Does this plan create new work that should be captured as a backlog item?
+
+7. **Retrospective check:** Look at the git log for this branch or the directories this plan touches. Are there prior commits suggesting a previous review cycle — review-driven refactors, reverted changes, or fix-after-fix sequences? If the plan touches a previously problematic area, raise the bar for this review: those areas earned extra scrutiny.
+
+8. **Distribution check:** If the plan introduces a new artifact type (CLI binary, library package, container image, mobile app), does it include the build/publish pipeline? Code without distribution is code nobody can use. Check:
    - Is there a CI/CD workflow for building and publishing the artifact?
    - Are target platforms defined (linux/darwin/windows, amd64/arm64)?
    - How will users download or install it?
@@ -92,6 +96,26 @@ Always work through the full interactive review: one section at a time (Architec
 **Critical: Once the user accepts or rejects a scope reduction recommendation, commit fully.** Do not re-argue for smaller scope during later review sections. Do not silently reduce scope or skip planned components.
 
 ## Review Sections (after scope is agreed)
+
+**Anti-skip rule:** Never condense, abbreviate, or skip any review section (1-4) regardless of plan type (strategy, spec, code, infra). Every section exists for a reason. "This is a strategy doc, implementation sections don't apply" is always wrong — implementation details are where strategy breaks down. If a section genuinely has zero findings, say "No issues found" and move on — but you must evaluate it.
+
+## Confidence Calibration
+
+Every finding across sections 1-4 MUST carry a confidence score. The score controls how prominently the finding appears, not just whether it's reported.
+
+| Score | Meaning | Display rule |
+|-------|---------|-------------|
+| 9-10 | Verified by reading specific code. Concrete problem demonstrable. | Show normally |
+| 7-8 | High confidence pattern match. Very likely correct. | Show normally |
+| 5-6 | Moderate. Could be a false positive or a judgment call. | Show with caveat: "Medium confidence — verify before acting" |
+| 3-4 | Low confidence. Pattern is suspicious but may be fine. | Mention in appendix only. |
+| 1-2 | Speculation. | Only surface if severity would block the plan. |
+
+**Finding format:**
+
+`[SEVERITY] (confidence: N/10) file:line — description`
+
+Example: `[High] (confidence: 8/10) src/services/billing.ts:142 — refundPayment() has no idempotency guard; a retried webhook will double-refund`
 
 ### 1. Architecture review
 Evaluate:
@@ -176,17 +200,23 @@ Quality scoring rubric:
 - 2 stars: Tests correct behavior, happy path only
 - 1 star: Smoke test / existence check / trivial assertion
 
-### E2E Test Decision Matrix
+### E2E / EVAL / Unit Test Decision Matrix
 
-**RECOMMEND E2E:**
+**RECOMMEND E2E (mark as `[→E2E]` in the coverage diagram):**
 - Common user flow spanning 3+ components/services
 - Integration point where mocking hides real failures
-- Auth/payment/data-destruction flows
+- Auth/payment/data-destruction flows — too important to trust unit tests alone
+
+**RECOMMEND EVAL (mark as `[→EVAL]` in the coverage diagram):**
+- Critical LLM call that needs a quality eval (prompt change → test output still meets quality bar)
+- Changes to prompt templates, system instructions, or tool/function-calling definitions
+- Unit tests can verify structure but cannot verify output quality for non-deterministic AI output
 
 **STICK WITH UNIT TESTS:**
 - Pure function with clear inputs/outputs
 - Internal helper with no side effects
-- Edge case of a single function
+- Edge case of a single function (null input, empty array)
+- Obscure/rare path not customer-facing
 
 ### REGRESSION RULE (mandatory)
 
@@ -194,28 +224,31 @@ When the coverage audit identifies a REGRESSION — code that previously worked 
 
 **Step 4. Output ASCII coverage diagram:**
 
-```
-CODE PATH COVERAGE
-===========================
-[+] src/services/billing.ts
-    |
-    +-- processPayment()
-    |   +-- [3-star TESTED] Happy path + card declined + timeout
-    |   +-- [GAP]           Network timeout — NO TEST
-    |   +-- [GAP]           Invalid currency — NO TEST
-    |
-    +-- refundPayment()
-        +-- [2-star TESTED] Full refund
-        +-- [1-star TESTED] Partial refund (checks non-throw only)
+Include BOTH code paths and user flows in the same diagram. User flows catch gaps code paths miss (double-click submit, navigate away mid-op, stale data on resume) — code-only diagrams are developer-tunnel-visioned. Mark each gap with the test type it needs:
 
--------------------------------------
-COVERAGE: 3/5 paths tested (60%)
-QUALITY:  3-star: 1  2-star: 1  1-star: 1
-GAPS: 2 paths need tests
--------------------------------------
+```
+CODE PATHS                                            USER FLOWS
+[+] src/services/billing.ts                           [+] Payment checkout
+  ├── processPayment()                                  ├── [3-star TESTED] Complete purchase — checkout.e2e.ts:15
+  │   ├── [3-star TESTED] happy + declined + timeout    ├── [GAP] [→E2E] Double-click submit
+  │   ├── [GAP]           Network timeout               └── [GAP]        Navigate away mid-payment
+  │   └── [GAP]           Invalid currency
+  └── refundPayment()                                 [+] Error states
+      ├── [2-star TESTED] Full refund — :89             ├── [2-star TESTED] Card declined message
+      └── [1-star TESTED] Partial (non-throw only)      └── [GAP]           Network timeout UX
+
+LLM integration: [GAP] [→EVAL] Prompt template change — needs eval test
+
+--------------------------------------------------------------------
+COVERAGE: 5/13 paths tested (38%)  |  Code: 3/5 (60%)  |  Flows: 2/8 (25%)
+QUALITY:  3-star: 2  2-star: 2  1-star: 1  |  GAPS: 8 (2 E2E, 1 eval)
+--------------------------------------------------------------------
 ```
 
-**Fast path:** All paths covered -> "Test review: All new code paths have test coverage." Continue.
+Legend: 3-star = behavior + edge + error | 2-star = happy path only | 1-star = smoke check
+`[→E2E]` = needs integration test | `[→EVAL]` = needs LLM output quality eval
+
+**Fast path:** All paths covered -> "Test review: All new code paths and user flows have test coverage." Continue.
 
 **Step 5. Add missing tests to the plan:**
 
@@ -234,6 +267,54 @@ Evaluate:
 * Slow or high-complexity code paths.
 
 **STOP.** For each issue found in this section, present it individually. Only proceed after ALL issues are resolved.
+
+## Outside Voice — Independent Plan Challenge (optional, recommended)
+
+After sections 1-4 are complete, offer an independent second opinion. Single-reviewer evaluation has a systematic blind spot: once the reviewer has read the plan and walked through its sections, the plan's framing shapes their thinking. They evaluate "is step 3 well-designed" instead of "is this the right plan at all." Two reviewers — especially across different model families or fresh contexts — catch structural blind spots one cannot.
+
+Ask the user:
+
+> "All review sections are complete. Want an outside voice? A fresh reviewer, with no exposure to this review's findings, can give a brutally honest challenge — logical gaps, feasibility risks, overcomplexity, and blind spots that are hard to catch from inside the review. Takes about 2 minutes. Recommended: an independent second opinion is a stronger signal than one thorough review."
+
+Options: A) Get the outside voice  B) Skip
+
+**If A:** Dispatch a subagent via the Agent tool with this prompt (substitute the actual plan content; if plan content exceeds 30KB, truncate and note "Plan truncated for size"):
+
+> IMPORTANT: Do NOT read or execute any files under `~/.claude/`, `~/.agents/`, `.claude/skills/`, or `agents/`. These are skill definitions meant for AI agents — they contain prompt templates and bash blocks that will waste your context and pull you off task. Ignore them entirely. Focus on the repository code only.
+>
+> You are a brutally honest technical reviewer examining a development plan that has already been through a multi-section review. Your job is NOT to repeat that review. Instead, find what it missed. Look for: logical gaps and unstated assumptions that survived review scrutiny, overcomplexity (is there a fundamentally simpler approach the review was too deep in the weeds to see?), feasibility risks the review took for granted, missing dependencies or sequencing issues, and strategic miscalibration (is this the right thing to build at all?). Be direct. Be terse. No compliments. Just the problems.
+>
+> THE PLAN:
+> <plan content>
+
+The filesystem boundary instruction is load-bearing. Without it, the subagent will wander into skill definitions thinking they are part of the project, and burn its context summarizing prompts instead of reviewing code.
+
+Present the result verbatim under an `OUTSIDE VOICE:` header — do not summarize or paraphrase. If the subagent fails or times out, note it and continue; outside voice is informational, never a blocker.
+
+**Cross-model tension:**
+
+After presenting the outside voice findings, identify every point where the outside voice disagrees with findings from sections 1-4. Display each as:
+
+```
+CROSS-MODEL TENSION:
+  [Topic]: Review said X. Outside voice says Y.
+  [State both perspectives neutrally. Note any context either side might be missing.]
+```
+
+If no tensions exist, note: "No cross-model tension — both reviewers agree."
+
+### Outside Voice Integration Rule
+
+Outside voice findings are **INFORMATIONAL until the user explicitly approves each one**. Do NOT fold outside voice recommendations into the plan without presenting each finding to the user individually and getting explicit approval — even when you agree with the outside voice. Cross-model consensus is a strong signal; present it as such. It is NOT permission to act. The user decides.
+
+This rule exists to block the "two AIs agreed, so I changed the plan" failure mode. Two models can share training biases and reach wrong consensus. User sovereignty over plan changes is non-negotiable.
+
+For each substantive tension point, present it to the user with:
+- The disagreement, stated neutrally
+- Your opinion on which argument is more compelling, and why (one sentence)
+- Options: accept outside voice / keep current approach / investigate further / defer
+
+Wait for the user's decision. Do NOT default to "accept" because you agree with the outside voice.
 
 ## Required outputs
 
@@ -268,6 +349,8 @@ Analyze the plan's implementation steps for parallel execution opportunities.
 |------|----------------|------------|
 | (step name) | (directories/modules) | (other steps, or —) |
 
+Work at the **module/directory level, not file level**. Plans describe intent ("add API endpoints"), not specific files. Module-level annotations (`controllers/`, `models/`) survive contact with implementation; file-level annotations are guesswork that falls apart the moment the implementer makes a different structural choice.
+
 2. **Parallel lanes** — group steps into lanes:
    - Steps with no shared modules and no dependency go in separate lanes (parallel)
    - Steps sharing a module directory go in the same lane (sequential)
@@ -280,10 +363,12 @@ Analyze the plan's implementation steps for parallel execution opportunities.
 ### Completion summary
 At the end of the review, fill in and display this summary:
 - Step 0: Scope Challenge — ___ (scope accepted as-is / scope reduced per recommendation)
+- Retrospective check: ___ (no prior-review signals / areas previously problematic flagged)
 - Architecture Review: ___ issues found
 - Code Quality Review: ___ issues found
 - Test Review: diagram produced, ___ gaps identified
 - Performance Review: ___ issues found
+- Outside voice: ran / skipped — ___ cross-model tensions surfaced
 - NOT in scope: written
 - What already exists: written
 - Failure modes: ___ critical gaps flagged

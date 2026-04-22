@@ -393,6 +393,28 @@ Before producing findings, run every candidate through this filter.
 
 **Comprehensive mode (`/security-audit --comprehensive`):** 2/10 confidence gate. Filter true noise only (test fixtures, documentation, placeholders) but include anything that MIGHT be a real issue. Flag these as `TENTATIVE` to distinguish from confirmed findings.
 
+**Confidence Calibration (1-10):**
+
+Every finding MUST carry a confidence score. The score controls BOTH the gate (report vs discard) AND the display style (how prominently it appears).
+
+| Score | Meaning | Display rule |
+|-------|---------|-------------|
+| 9-10 | Verified by reading specific code. Concrete exploit path demonstrable. | Show normally |
+| 7-8 | High confidence pattern match. Very likely correct. | Show normally |
+| 5-6 | Moderate. Could be a false positive. | Show with caveat: "Medium confidence — verify this is actually an issue" |
+| 3-4 | Low confidence. Pattern is suspicious but may be fine. | Suppress from main report. Include in appendix only. |
+| 1-2 | Speculation. | Only report if severity would be P0. |
+
+**Finding format (use this exact form in output):**
+
+`[SEVERITY] (confidence: N/10) file:line — description`
+
+Examples:
+- `[P1] (confidence: 9/10) app/models/user.rb:42 — SQL injection via string interpolation in where clause`
+- `[P2] (confidence: 5/10) app/controllers/api/v1/users_controller.rb:18 — Possible N+1 query, verify with production logs`
+
+Daily mode discards anything below 8/10. Comprehensive mode keeps ≥2/10 but applies the display rules above: 3-4 goes to appendix, 5-6 gets a caveat, 7+ shows normally.
+
 **Hard exclusions — automatically discard findings matching these:**
 
 1. Denial of Service (DOS), resource exhaustion, or rate limiting issues — **EXCEPTION:** LLM cost/spend amplification findings from Phase 7 (unbounded LLM calls, missing cost caps) are NOT DoS — they are financial risk and must NOT be auto-discarded under this rule.

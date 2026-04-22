@@ -132,14 +132,13 @@ done
 
 ### 第四步：安装 Gstack 精简版 Skills（可选）
 
-从 gstack 提取方法论核心，安装为全局 skill。
+本仓库已经提供剥好的精简版（`skills/security-audit/` 和 `skills/architecture-review/`）。手动安装直接从这里复制，**不要从 gstack 原仓库复制**——原仓库的 SKILL.md 包含大量 gstack harness 依赖（二进制调用、`~/.gstack/` 目录约定、跨 skill 链），离开 gstack 生态不可用。
 
 ```bash
-git clone --depth 1 https://github.com/garrytan/gstack.git ~/develop/code/git/gstack
 mkdir -p ~/.claude/skills/security-audit ~/.claude/skills/architecture-review
 
-cp ~/develop/code/git/gstack/cso/SKILL.md ~/.claude/skills/security-audit/SKILL.md
-cp ~/develop/code/git/gstack/plan-eng-review/SKILL.md ~/.claude/skills/architecture-review/SKILL.md
+cp ~/develop/code/git/superpowers-crew/skills/security-audit/SKILL.md ~/.claude/skills/security-audit/SKILL.md
+cp ~/develop/code/git/superpowers-crew/skills/architecture-review/SKILL.md ~/.claude/skills/architecture-review/SKILL.md
 ```
 
 另外 2 个（调试、代码审查）与 superpowers 内置 skill 重叠，已移除：
@@ -148,8 +147,34 @@ cp ~/develop/code/git/gstack/plan-eng-review/SKILL.md ~/.claude/skills/architect
 
 | Skill | 用途 | 来源 |
 |-------|------|------|
-| `/security-audit` | 安全审计（OWASP+STRIDE、17 条误报排除、8/10 置信度门槛） | gstack `/cso` |
-| `/architecture-review` | 架构评审（15 认知模式、ASCII 覆盖图、E2E 决策矩阵） | gstack `/plan-eng-review` |
+| `/security-audit` | 安全审计（OWASP+STRIDE、17 条误报排除、8/10 置信度门槛、1-10 置信度分级、趋势字段） | gstack `/cso` 精简 |
+| `/architecture-review` | 架构评审（15 认知模式、ASCII 覆盖图、E2E/EVAL 决策矩阵、Outside Voice 独立挑战、Anti-skip 规则） | gstack `/plan-eng-review` 精简 |
+
+#### 精简原则：保留审核方法论，剥离 gstack harness
+
+crew 的定位是**纯 prompt 层的知识注入**——只保留"审什么、怎么审"的判断标准和流程，不绑定任何运行时。用户自己的 harness（如果有）决定持久化、跨 skill 编排、下游消费怎么做。
+
+以下是从 gstack 上游合并更新时的判断标准。**保留**：
+
+- 审核方法论：phase 划分、检查维度、评分门槛、决策矩阵、画图格式
+- 知识规则：OWASP / STRIDE / 认知模式、误报排除规则、框架默认保护清单
+- 判断标准：置信度分级表、finding 输出格式、严重度校准
+- 通用反模式：反 AI 共识自动通过（User Sovereignty）、反省略规则、跨模型挑战的 prompt 模板
+- 给另一个 AI 的边界提示：如 outside voice prompt 里的 filesystem boundary（告诉它别读 skill 定义目录）
+
+**剥离**：
+
+- **二进制调用**：`gstack-learnings-log`、`gstack-learnings-search`、`gstack-review-log`、`gstack-review-read`、`gstack-slug`、`gstack-config` 等。crew 里让模型"记下来"但没地方记，就是空转指令
+- **目录约定**：`~/.gstack/projects/{slug}/`、`.gstack/security-reports/`。输出路径替换为通用路径（`.security-reports/`）或让用户自己定
+- **跨 skill 链**：`/ship` `/retro` `/office-hours` `/canary` 等 gstack 内部命令引用。如果概念有用，改成"你的 ship 流程 / 问题定义阶段"这种通用表述；如果只是流程衔接，整段丢掉
+- **跨运行持久化语义**：calibration learning（"记住校准事件下次提高置信度"）、prior learnings 搜索、trend tracking 的实现细节（fingerprint 匹配、JSON schema 持久化）——crew 可以保留**格式**（如 trend 输出模板），但不假设上次的文件存在
+- **gstack 特化输出物**：review readiness dashboard、plan file review report、review log JSONL——这些要 gstack 下游 skill 消费才有意义
+- **模型/风格包装**：model overlay、voice directive、writing style V1、jargon list、preamble 里的 gstack 品牌话术
+- **安装/升级流程**：vendoring 检测、`./setup` 交叉引用、CLAUDE.md routing 注入
+
+**合并混合块的原则**：核心是方法论但夹杂了 harness 实现（比如 outside voice 方法论 + codex 特定命令）——留方法论，改写实现为通用路径（`codex exec` → "通过 Agent tool 起 subagent"）。
+
+**判断话术**：如果一段内容**离开 gstack 的 `~/.gstack/` 目录、`gstack-*` 二进制、`/ship` `/retro` 这些命令后仍然有判断力**，它就是方法论，合进来；如果**离开这些东西后就只剩空转指令或孤儿文件**，它是 harness，丢掉。
 
 ### 第五步：安装 Patcher Hook 和补丁
 
@@ -197,11 +222,18 @@ cd ~/develop/code/git/agency-agents && git pull
 # Design Skills（symlink 自动生效）
 cd ~/develop/code/git/ui-ux-pro-max-skill && git pull
 
-# Gstack（需手动对比合并）
+# Gstack 精简版（crew 维护的提取版，跟随本仓库更新）
+cd ~/develop/code/git/superpowers-crew && git pull
+cp skills/security-audit/SKILL.md ~/.claude/skills/security-audit/SKILL.md
+cp skills/architecture-review/SKILL.md ~/.claude/skills/architecture-review/SKILL.md
+
+# 想从 gstack 上游汲取新方法论时：
+# 1. 拉 gstack 最新版并和上一次合并点做 diff（不是和 crew 版 diff——crew 是剥过的，那会全是噪声）
 cd ~/develop/code/git/gstack && git pull
-diff ~/develop/code/git/gstack/cso/SKILL.md ~/.claude/skills/security-audit/SKILL.md
-diff ~/develop/code/git/gstack/plan-eng-review/SKILL.md ~/.claude/skills/architecture-review/SKILL.md
-# 如有有价值的变更，手动合并
+git log --oneline <last-merged-sha>..HEAD -- cso/ plan-eng-review/
+git diff <last-merged-sha>..HEAD -- cso/SKILL.md plan-eng-review/SKILL.md
+# 2. 按"精简原则"筛：保留审核方法论，剥离 harness（详见上文第四步）
+# 3. 只把筛过的内容合进 crew 的 skills/security-audit/ 和 skills/architecture-review/
 ```
 
 ---
